@@ -1,6 +1,4 @@
 /*
- * Author: Yasuhito Takamiya <yasuhito@gmail.com>
- *
  * Copyright (C) 2008-2012 NEC Corporation
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,6 +16,8 @@
  */
 
 
+#include "ruby.h"
+#include "action-common.h"
 #include "barrier-reply.h"
 #include "buffer.h"
 #include "controller.h"
@@ -28,10 +28,9 @@
 #include "logger.h"
 #include "openflow-error.h"
 #include "openflow.h"
-#include "packet_in.h"
+#include "packet-in.h"
 #include "port-status.h"
 #include "queue-get-config-reply.h"
-#include "ruby.h"
 #include "rubysig.h"
 #include "stats-reply.h"
 #include "switch-disconnected.h"
@@ -39,7 +38,7 @@
 #include "vendor.h"
 
 
-VALUE mTrema;
+extern VALUE mTrema;
 VALUE cController;
 
 
@@ -58,11 +57,9 @@ handle_timer_event( void *self ) {
  *   @example
  *     send_message datapath_id, FeaturesRequest.new
  *
- *
- *   @param [Number] datapath_id
+ *   @param [Integer] datapath_id
  *     the datapath to which a message is sent.
- *
- *   @param [FeaturesRequest] message
+ *   @param [Hello, EchoRequest, EchoReply, FeaturesRequest, SetConfig, GetConfigRequest, QueueGetConfigRequest, StatsRequest, BarrierRequest, PortMod, Vendor] message
  *     the message to be sent.
  */
 static VALUE
@@ -82,22 +79,90 @@ controller_send_list_switches_request( VALUE self ) {
 
 
 static void
-form_actions( VALUE raction, openflow_actions *actions ) {
-  VALUE *data_ptr;
-  int i;
+append_action( openflow_actions *actions, VALUE action ) {
+  if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::Enqueue" ) ) == Qtrue ) {
+    uint32_t queue_id = ( uint32_t ) NUM2UINT( rb_funcall( action, rb_intern( "queue_id" ), 0 ) );
+    uint16_t port_number = ( uint16_t ) NUM2UINT( rb_funcall( action, rb_intern( "port_number" ), 0 ) );
+    append_action_enqueue( actions, port_number, queue_id );
+  }
+  else if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::SendOutPort" ) ) == Qtrue ) {
+    uint16_t port_number = ( uint16_t ) NUM2UINT( rb_funcall( action, rb_intern( "port_number" ), 0 ) );
+    uint16_t max_len = ( uint16_t ) NUM2UINT( rb_funcall( action, rb_intern( "max_len" ), 0 ) );
+    append_action_output( actions, port_number, max_len );
+  }
+  else if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::SetEthDstAddr" ) ) == Qtrue ) {
+    uint8_t dl_dst[ OFP_ETH_ALEN ];
+    uint8_t *ptr = ( uint8_t* ) dl_addr_to_a( rb_funcall( action, rb_intern( "mac_address" ), 0 ), dl_dst );
+    append_action_set_dl_dst( actions, ptr );
+  }
+  else if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::SetEthSrcAddr" ) ) == Qtrue ) {
+    uint8_t dl_src[ OFP_ETH_ALEN ];
+    uint8_t *ptr = ( uint8_t* ) dl_addr_to_a( rb_funcall( action, rb_intern( "mac_address" ), 0 ), dl_src );
+    append_action_set_dl_src( actions, ptr );
+  }
+  else if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::SetIpDstAddr" ) ) == Qtrue ) {
+    append_action_set_nw_dst( actions, nw_addr_to_i( rb_funcall( action, rb_intern( "ip_address" ), 0 ) ) );
+  }
+  else if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::SetIpSrcAddr" ) ) == Qtrue ) {
+    append_action_set_nw_src( actions, nw_addr_to_i( rb_funcall( action, rb_intern( "ip_address" ), 0 ) ) );
+  }
+  else if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::SetIpTos" ) ) == Qtrue ) {
+    append_action_set_nw_tos( actions, ( uint8_t ) NUM2UINT( rb_funcall( action, rb_intern( "type_of_service" ), 0 ) ) );
+  }
+  else if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::SetTransportDstPort" ) ) == Qtrue ) {
+    append_action_set_tp_dst( actions, ( uint16_t ) NUM2UINT( rb_funcall( action, rb_intern( "port_number" ), 0 ) ) );
+  }
+  else if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::SetTransportSrcPort" ) ) == Qtrue ) {
+    append_action_set_tp_src( actions, ( uint16_t ) NUM2UINT( rb_funcall( action, rb_intern( "port_number" ), 0 ) ) );
+  }
+  else if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::SetVlanPriority" ) ) == Qtrue ) {
+    append_action_set_vlan_pcp( actions, ( uint8_t ) NUM2UINT( rb_funcall( action, rb_intern( "vlan_priority" ), 0 ) ) );
+  }
+  else if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::SetVlanVid" ) ) == Qtrue ) {
+    append_action_set_vlan_vid( actions, ( uint16_t ) NUM2UINT( rb_funcall( action, rb_intern( "vlan_id" ), 0 ) ) );
+  }
+  else if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::StripVlanHeader" ) ) == Qtrue ) {
+    append_action_strip_vlan( actions );
+  }
+  else if ( rb_funcall( action, rb_intern( "is_a?" ), 1, rb_path2class( "Trema::VendorAction" ) ) == Qtrue ) {
+    VALUE vendor_id = rb_funcall( action, rb_intern( "vendor_id" ), 0 );
+    VALUE rbody = rb_funcall( action, rb_intern( "body" ), 0 );
+    if ( rbody != Qnil ) {
+      Check_Type( rbody, T_ARRAY );
+      uint16_t length = ( uint16_t ) RARRAY_LEN( rbody );
+      buffer *body = alloc_buffer_with_length( length );
+      int i;
+      for ( i = 0; i < length; i++ ) {
+        ( ( uint8_t * ) body->data )[ i ] = ( uint8_t ) FIX2INT( RARRAY_PTR( rbody )[ i ] );
+      }
+      append_action_vendor( actions, ( uint32_t ) NUM2UINT( vendor_id ), body );
+      free_buffer( body );
+    }
+    else {
+      append_action_vendor( actions, ( uint32_t ) NUM2UINT( vendor_id ), NULL );
+    }
+  }
+  else {
+    rb_raise( rb_eTypeError, "actions argument must be an Array of Action objects" );
+  }
+}
 
+
+static void
+form_actions( VALUE raction, openflow_actions *actions ) {
   if ( raction != Qnil ) {
     switch ( TYPE( raction ) ) {
       case T_ARRAY:
-        data_ptr = RARRAY_PTR( raction );
-
-        for ( i = 0; i < RARRAY_LEN( raction ); i++ ) {
-          VALUE value = data_ptr[i];
-          rb_funcall( value, rb_intern( "append" ), 1, Data_Wrap_Struct( cController, NULL, NULL, actions ) );
+        {
+          VALUE *each = RARRAY_PTR( raction );
+          int i;
+          for ( i = 0; i < RARRAY_LEN( raction ); i++ ) {
+            append_action( actions, each[ i ] );
+          }
         }
         break;
       case T_OBJECT:
-        rb_funcall( raction, rb_intern( "append" ), 1, Data_Wrap_Struct( cController, NULL, NULL, actions ) );
+        append_action( actions, raction );
         break;
       default:
         rb_raise( rb_eTypeError, "actions argument must be an Array or an Action object" );
@@ -136,6 +201,7 @@ controller_send_flow_mod( uint16_t command, int argc, VALUE *argv, VALUE self ) 
   uint16_t hard_timeout = 0;
   uint16_t priority = UINT16_MAX;
   uint32_t buffer_id = UINT32_MAX;
+  uint16_t out_port = OFPP_NONE;
   uint16_t flags = OFPFF_SEND_FLOW_REM;
   openflow_actions *actions = create_actions();
 
@@ -171,6 +237,11 @@ controller_send_flow_mod( uint16_t command, int argc, VALUE *argv, VALUE self ) 
       buffer_id = ( uint32_t ) NUM2ULONG( opt_buffer_id );
     }
 
+    VALUE opt_out_port = rb_hash_aref( options, ID2SYM( rb_intern( "out_port" ) ) );
+    if ( opt_out_port != Qnil ) {
+      out_port = ( uint16_t )NUM2UINT( opt_out_port );
+    }
+
     VALUE opt_send_flow_rem = rb_hash_aref( options, ID2SYM( rb_intern( "send_flow_rem" ) ) );
     if ( opt_send_flow_rem == Qfalse ) {
       flags &= ( uint16_t ) ~OFPFF_SEND_FLOW_REM;
@@ -201,7 +272,7 @@ controller_send_flow_mod( uint16_t command, int argc, VALUE *argv, VALUE self ) 
     hard_timeout,
     priority,
     buffer_id,
-    OFPP_NONE,
+    out_port,
     flags,
     actions
   );
@@ -220,7 +291,7 @@ controller_send_flow_mod( uint16_t command, int argc, VALUE *argv, VALUE self ) 
  *
  *   @example
  *     def packet_in datapath_id, message
- *       send_flow_mod_add datapath_id, :match => Match.from(message), :actions => ActionOutput.new(OFPP_FLOOD)
+ *       send_flow_mod_add datapath_id, :match => Match.from(message), :actions => SendOutPort.new(OFPP_FLOOD)
  *     end
  *
  *
@@ -253,6 +324,10 @@ controller_send_flow_mod( uint16_t command, int argc, VALUE *argv, VALUE self ) 
  *     apply the flow to. If 0xffffffff, no buffered packet is to be
  *     applied to flow actions.
  *
+ *   @option options [Number] :out_port (0xffff)
+ *     If the option contains a value other than OFPP_NONE(0xffff),
+ *     it introduces a constraint when deleting flow entries.
+ *
  *   @option options [Boolean] :send_flow_rem (true)
  *     If true, send a flow_removed message when the flow expires or
  *     is deleted.
@@ -263,11 +338,11 @@ controller_send_flow_mod( uint16_t command, int argc, VALUE *argv, VALUE self ) 
  *     added and the modification fails.
  *
  *   @option options [Boolean] :emerg (false)
- *     if true, the switch must consider this flow entry as an
+ *     If true, the switch must consider this flow entry as an
  *     emergency entry, and only use it for forwarding when
  *     disconnected from the controller.
  *
- *   @option options [ActionOutput, Array<ActionOutput>, nil] :actions (nil)
+ *   @option options [SendOutPort, Array<SendOutPort>, nil] :actions (nil)
  *     The sequence of actions specifying the actions to perform on
  *     the flow's packets.
  */
@@ -331,7 +406,7 @@ controller_send_flow_mod_delete( int argc, VALUE *argv, VALUE self ) {
  *     send_packet_out(
  *       datapath_id,
  *       :packet_in => message,
- *       :actions => Trema::ActionOutput.new(port_no)
+ *       :actions => Trema::SendOutPort.new(port_no)
  *     )
  *
  *
@@ -361,9 +436,12 @@ controller_send_flow_mod_delete( int argc, VALUE *argv, VALUE self ) {
  *     The entire Ethernet frame. Should be of length 0 if buffer_id
  *     is 0xffffffff, and should be of length >0 otherwise.
  *
- *   @option options [ActionOutput, Array<ActionOutput>, nil] :actions (nil)
+ *   @option options [Action, Array<Action>, nil] :actions (nil)
  *     The sequence of actions specifying the actions to perform on
  *     the frame.
+ *
+ *   @option options [Boolean] :zero_padding (false)
+ *     If true, fill up to minimum ethernet frame size.
  */
 static VALUE
 controller_send_packet_out( int argc, VALUE *argv, VALUE self ) {
@@ -377,6 +455,7 @@ controller_send_packet_out( int argc, VALUE *argv, VALUE self ) {
   openflow_actions *actions = create_actions();
   const buffer *data = NULL;
   buffer *allocated_data = NULL;
+  VALUE opt_zero_padding = Qnil;
 
   if ( options != Qnil ) {
     VALUE opt_message = rb_hash_aref( options, ID2SYM( rb_intern( "packet_in" ) ) );
@@ -414,6 +493,22 @@ controller_send_packet_out( int argc, VALUE *argv, VALUE self ) {
       memcpy( append_back_buffer( allocated_data, length ), RSTRING_PTR( opt_data ), length );
       data = allocated_data;
     }
+
+    opt_zero_padding = rb_hash_aref( options, ID2SYM( rb_intern( "zero_padding" ) ) );
+    if ( opt_zero_padding != Qnil ) {
+      if ( TYPE( opt_zero_padding ) != T_TRUE && TYPE( opt_zero_padding ) != T_FALSE) {
+        rb_raise(rb_eTypeError, ":zero_padding must be true or false");
+      }
+    }
+  }
+
+  if ( data != NULL && data->length + ETH_FCS_LENGTH < ETH_MINIMUM_LENGTH &&
+       opt_zero_padding != Qnil && TYPE( opt_zero_padding ) == T_TRUE ) {
+    if ( allocated_data == NULL ) {
+      allocated_data = duplicate_buffer( data );
+      data = allocated_data;
+    }
+    fill_ether_padding( allocated_data );
   }
 
   buffer *packet_out = create_packet_out(
@@ -522,16 +617,31 @@ controller_start_trema( VALUE self ) {
   return self;
 }
 
+
 /********************************************************************************
  * Init Controller module.
  ********************************************************************************/
 
 void
 Init_controller() {
+  rb_require( "trema/enqueue" );
+  rb_require( "trema/send-out-port" );
+  rb_require( "trema/set-eth-dst-addr" );
+  rb_require( "trema/set-eth-src-addr" );
+  rb_require( "trema/set-ip-dst-addr" );
+  rb_require( "trema/set-ip-src-addr" );
+  rb_require( "trema/set-ip-tos" );
+  rb_require( "trema/set-transport-dst-port" );
+  rb_require( "trema/set-transport-src-port" );
+  rb_require( "trema/set-vlan-priority" );
+  rb_require( "trema/set-vlan-vid" );
+  rb_require( "trema/strip-vlan-header" );
+  rb_require( "trema/vendor-action" );
+
   rb_require( "trema/app" );
+
   VALUE cApp = rb_eval_string( "Trema::App" );
   cController = rb_define_class_under( mTrema, "Controller", cApp );
-  rb_include_module( cController, mLogger );
 
   rb_define_const( cController, "OFPP_MAX", INT2NUM( OFPP_MAX ) );
   rb_define_const( cController, "OFPP_IN_PORT", INT2NUM( OFPP_IN_PORT ) );
@@ -543,29 +653,6 @@ Init_controller() {
   rb_define_const( cController, "OFPP_LOCAL", INT2NUM( OFPP_LOCAL ) );
   rb_define_const( cController, "OFPP_NONE", INT2NUM( OFPP_NONE ) );
 
-  rb_define_const( cController, "OFPC_FLOW_STATS", INT2NUM( OFPC_FLOW_STATS ) );
-  rb_define_const( cController, "OFPC_TABLE_STATS", INT2NUM( OFPC_TABLE_STATS ) );
-  rb_define_const( cController, "OFPC_PORT_STATS", INT2NUM( OFPC_PORT_STATS ) );
-  rb_define_const( cController, "OFPC_STP", INT2NUM( OFPC_STP) );
-  rb_define_const( cController, "OFPC_RESERVED", INT2NUM( OFPC_RESERVED ) );
-  rb_define_const( cController, "OFPC_IP_REASM", INT2NUM( OFPC_IP_REASM ) );
-  rb_define_const( cController, "OFPC_QUEUE_STATS", INT2NUM( OFPC_QUEUE_STATS ) );
-  rb_define_const( cController, "OFPC_ARP_MATCH_IP", INT2NUM( OFPC_ARP_MATCH_IP ) );
-
-  rb_define_const( cController, "OFPAT_OUTPUT", INT2NUM( OFPAT_OUTPUT ) );
-  rb_define_const( cController, "OFPAT_SET_VLAN_VID", INT2NUM( OFPAT_SET_VLAN_VID ) );
-  rb_define_const( cController, "OFPAT_SET_VLAN_PCP", INT2NUM( OFPAT_SET_VLAN_PCP ) );
-  rb_define_const( cController, "OFPAT_STRIP_VLAN", INT2NUM( OFPAT_STRIP_VLAN ) );
-  rb_define_const( cController, "OFPAT_SET_DL_SRC", INT2NUM( OFPAT_SET_DL_SRC) );
-  rb_define_const( cController, "OFPAT_SET_DL_DST", INT2NUM( OFPAT_SET_DL_DST) );
-  rb_define_const( cController, "OFPAT_SET_NW_SRC", INT2NUM( OFPAT_SET_NW_SRC ) );
-  rb_define_const( cController, "OFPAT_SET_NW_DST", INT2NUM( OFPAT_SET_NW_DST ) );
-  rb_define_const( cController, "OFPAT_SET_NW_TOS", INT2NUM( OFPAT_SET_NW_TOS ) );
-  rb_define_const( cController, "OFPAT_SET_TP_SRC", INT2NUM( OFPAT_SET_TP_SRC ) );
-  rb_define_const( cController, "OFPAT_SET_TP_DST", INT2NUM( OFPAT_SET_TP_DST ) );
-  rb_define_const( cController, "OFPAT_ENQUEUE", INT2NUM( OFPAT_ENQUEUE ) );
-  rb_define_const( cController, "OFPAT_VENDOR", INT2NUM( OFPAT_VENDOR ) );
-
   rb_define_method( cController, "send_message", controller_send_message, 2 );
   rb_define_method( cController, "send_list_switches_request", controller_send_list_switches_request, 0 );
   rb_define_method( cController, "send_flow_mod_add", controller_send_flow_mod_add, -1 );
@@ -575,8 +662,6 @@ Init_controller() {
 
   rb_define_method( cController, "run!", controller_run, 0 );
   rb_define_method( cController, "shutdown!", controller_shutdown, 0 );
-
-  // Private
   rb_define_private_method( cController, "start_trema", controller_start_trema, 0 );
 
   rb_require( "trema/controller" );

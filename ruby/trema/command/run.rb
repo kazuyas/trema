@@ -1,8 +1,4 @@
 #
-# trema run command.
-#
-# Author: Yasuhito Takamiya <yasuhito@gmail.com>
-#
 # Copyright (C) 2008-2012 NEC Corporation
 #
 # This program is free software; you can redistribute it and/or modify
@@ -20,7 +16,6 @@
 #
 
 
-require "optparse"
 require "trema/dsl"
 require "trema/util"
 
@@ -30,30 +25,15 @@ module Trema
     include Trema::Util
 
 
-    def run
-      sanity_check
+    def trema_run options
+      @config_file = options[ :conf ] || nil
 
-      options = OptionParser.new
-      options.banner = "Usage: #{ $0 } run [OPTIONS ...]"
-
-      options.on( "-c", "--conf FILE" ) do | v |
-        @config_file = v
-      end
-      options.on( "-d", "--daemonize" ) do
+      if options[ :daemonize ]
         $run_as_daemon = true
       end
-
-      options.separator ""
-
-      options.on( "-h", "--help" ) do
-        puts options.to_s
-        exit 0
+      if options[ :tremashark ]
+        $use_tremashark = true
       end
-      options.on( "-v", "--verbose" ) do
-        $verbose = true
-      end
-
-      options.parse! ARGV
 
       cleanup_current_session
 
@@ -62,6 +42,8 @@ module Trema
       else
         begin
           Trema::DSL::Runner.new( load_config ).run
+        rescue SystemExit
+          # This is OK
         ensure
           cleanup_current_session
         end
@@ -88,17 +70,18 @@ module Trema
 
       if ARGV[ 0 ]
         controller_file = ARGV[ 0 ].split.first
-        if c_controller?
+        if ruby_controller?
+          require "trema"
+          include Trema
+          ARGV.replace ARGV[ 0 ].split
+          $LOAD_PATH << File.dirname( controller_file )
+          load controller_file
+        else
+          # Assume that the controller is written in C
           stanza = Trema::DSL::Run.new
           stanza.path controller_file
           stanza.options ARGV[ 0 ].split[ 1..-1 ]
           Trema::App.new( stanza )
-        else
-          # Ruby controller
-          require "trema"
-          ARGV.replace ARGV[ 0 ].split
-          $LOAD_PATH << File.dirname( controller_file )
-          Trema.module_eval IO.read( controller_file )
         end
       end
 
@@ -106,8 +89,8 @@ module Trema
     end
 
 
-    def c_controller?
-      /ELF/=~ `file #{ ARGV[ 0 ].split.first }`
+    def ruby_controller?
+      /\.rb\Z/=~ ARGV[ 0 ].split.first
     end
   end
 end

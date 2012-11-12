@@ -1,6 +1,4 @@
 #
-# Author: Yasuhito Takamiya <yasuhito@gmail.com>
-#
 # Copyright (C) 2008-2012 NEC Corporation
 #
 # This program is free software; you can redistribute it and/or modify
@@ -28,7 +26,7 @@ When /^wait until "([^"]*)" is up$/ do | process |
   pid_file = File.join( Trema.pid, "#{ process }.pid" )
   loop do
     nloop += 1
-    raise "Timeout" if nloop > 50 # FIXME
+    raise "Timeout" if nloop > 60 # FIXME
     break if FileTest.exists?( pid_file ) and not ps_entry_of( process ).nil?
     sleep 0.1
   end
@@ -41,8 +39,26 @@ Then /^([^\s]*) is terminated$/ do | name |
 end
 
 
-Then /^vswitch ([^\s]*) is terminated$/ do | dpid |
-  pid_file = File.join( Trema.tmp, "openflowd.#{ dpid }.pid" )
+Then /^the vswitch "(.*?)" is running$/ do | dpid |
+  pid_file = File.join( Trema.pid, "open_vswitch.#{ dpid }.pid" )
+  File.exists?( pid_file ).should be_true
+end
+
+
+Then /^the vswitch "([^"]*)" is terminated$/ do | dpid |
+  pid_file = File.join( Trema.pid, "open_vswitch.#{ dpid }.pid" )
+  File.exists?( pid_file ).should be_false
+end
+
+
+Then /^the vhost "(.*?)" is terminated$/ do | host |
+  pid_file = File.join( Trema.pid, "phost.#{ host }.pid" )
+  File.exists?( pid_file ).should be_false
+end
+
+
+Then /^the controller "(.*?)" is terminated$/ do | controller |
+  pid_file = File.join( Trema.pid, "#{ controller }.pid" )
   File.exists?( pid_file ).should be_false
 end
 

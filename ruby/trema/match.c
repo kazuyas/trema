@@ -1,6 +1,4 @@
 /*
- * Author: Yasuhito Takamiya <yasuhito@gmail.com>
- *
  * Copyright (C) 2008-2012 NEC Corporation
  *
  * This program is free software; you can redistribute it and/or modify
@@ -35,7 +33,7 @@ match_alloc( VALUE klass ) {
 }
 
 
-static struct 
+static struct
 ofp_match *get_match( VALUE self ) {
   struct ofp_match *match;
   Data_Get_Struct( self, struct ofp_match, match );
@@ -45,8 +43,7 @@ ofp_match *get_match( VALUE self ) {
 
 /*
  * Creates a {Match} instance from packet_in's data, the method accepts an
- * additional single argument whose type is an array of symbols to wildcard set
- * to don't care and ignore while matching flow entries.
+ * additional list of symbols to wildcard set and ignore while matching flow entries.
  *
  * @overload match_from(message, *options)
  *
@@ -54,7 +51,7 @@ ofp_match *get_match( VALUE self ) {
  *     def packet_in datapath_id, message
  *       send_flow_mod(
  *         datapath_id,
- *         :match => Match.from( message, [ :dl_type, :nw_proto ] ),
+ *         :match => Match.from( message, :dl_type, :nw_proto ),
  *         :actions => Trema::ActionOutput.new( 2 )
  *       )
  *     end
@@ -62,10 +59,10 @@ ofp_match *get_match( VALUE self ) {
  *   @param [PacketIn] message
  *     the {PacketIn}'s message content.
  *
- *   @param [optional, Array] options
- *     If supplied an array of symbol ids indicating fields to be wildcarded.
+ *   @param [optional, list] options
+ *     If supplied a comma-separated list of symbol ids indicating fields to be wildcarded.
  *
- *     [:inport]
+ *     [:in_port]
  *       the physical port number to wildcard.
  *
  *     [:dl_src]
@@ -102,7 +99,7 @@ ofp_match *get_match( VALUE self ) {
  *       the destination TCP/UDP port number to wildcard.
  *
  * @return [Match] self
- *   the modified or exact match from packet depending on whether the options 
+ *   the modified or exact match from packet depending on whether the options
  *   argument supplied or not.
  */
 static VALUE
@@ -119,7 +116,7 @@ match_from( int argc, VALUE *argv, VALUE self ) {
     int i;
     for ( i = 0; i < RARRAY_LEN( options ); i++ ) {
       wildcard_id = SYM2ID( RARRAY_PTR( options )[ i ] );
-      if ( rb_intern( "inport" ) == wildcard_id ) {
+      if ( rb_intern( "in_port" ) == wildcard_id ) {
         wildcards |= OFPFW_IN_PORT;
       }
       if ( rb_intern( "dl_src" ) == wildcard_id ) {
@@ -168,7 +165,7 @@ match_from( int argc, VALUE *argv, VALUE self ) {
  * @example
  *   def packet_in datapath_id, message
  *     match = Match.new( :dl_type => 0x0800, :nw_src => "192.168.0.1" )
- *     if match.compare( ExactMatch.form( message ) )
+ *     if match.compare( ExactMatch.from( message ) )
  *       info "Received packet from 192.168.0.1"
  *     end
  *   end
@@ -336,7 +333,7 @@ match_nw_src( VALUE self ) {
 
 /*
  * An IPv4 destination address in its numeric representation.
- * 
+ *
  * @return [IP] the value of nw_dst.
  */
 static VALUE
@@ -365,13 +362,13 @@ match_tp_dst( VALUE self ) {
 
 /*
  * Creates a {Match} instance which describe fields such as MAC addresses, IP
- * addresses, TCP/UDP ports of a flow to match against. An exact match 
+ * addresses, TCP/UDP ports of a flow to match against. An exact match
  * flow would match on all fields whereas don't care bits are wildcarded and
  * ignored.
  *
  * @overload initialize(options={})
  *
- *   @example 
+ *   @example
  *     Match.new(
  *       :in_port => port_no,
  *       :dl_src => "xx:xx:xx;xx:xx:xx",
@@ -389,7 +386,7 @@ match_tp_dst( VALUE self ) {
  *
  *   @param [Hash] options the options hash.
  *
- *   @option options [Number] :inport
+ *   @option options [Number] :in_port
  *     the physical port number to match.
  *
  *   @option options [String,Number,Trema::Mac] :dl_src
@@ -475,7 +472,7 @@ match_init( int argc, VALUE *argv, VALUE self ) {
         else {
           dl_addr = rb_funcall( rb_eval_string( "Trema::Mac" ), rb_intern( "new" ), 1, dl_src );
         }
-        dl_addr_short( dl_addr, match->dl_src );
+        dl_addr_to_a( dl_addr, match->dl_src );
         match->wildcards &= ( uint32_t ) ~OFPFW_DL_SRC;
       }
 
@@ -488,7 +485,7 @@ match_init( int argc, VALUE *argv, VALUE self ) {
         else {
           dl_addr = rb_funcall( rb_eval_string( "Trema::Mac" ), rb_intern( "new" ), 1, dl_dst );
         }
-        dl_addr_short( dl_addr, match->dl_dst );
+        dl_addr_to_a( dl_addr, match->dl_dst );
         match->wildcards &= ( uint32_t ) ~OFPFW_DL_DST;
       }
 

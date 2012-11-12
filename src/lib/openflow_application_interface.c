@@ -89,6 +89,12 @@ bool mock_delete_message_received_callback( char *service_name,
 bool mock_delete_message_replied_callback( char *service_name,
                                            void ( *callback )( uint16_t tag, void *data, size_t len, void *user_data ) );
 
+#ifdef clear_send_queue
+#undef clear_send_queue
+#endif
+#define clear_send_queue mock_clear_send_queue
+bool mock_clear_send_queue( const char *service_name );
+
 #ifdef getpid
 #undef getpid
 #endif
@@ -288,6 +294,26 @@ set_error_handler( error_handler callback, void *user_data ) {
 
   event_handlers.error_callback = callback;
   event_handlers.error_user_data = user_data;
+
+  return true;
+}
+
+
+bool
+set_echo_reply_handler( echo_reply_handler callback, void *user_data ) {
+  if ( callback == NULL ) {
+    die( "Callback function ( echo_reply_handler ) must not be NULL." );
+  }
+  assert( callback != NULL );
+
+  maybe_init_openflow_application_interface();
+  assert( openflow_application_interface_initialized );
+
+  debug( "Setting a echo reply handler ( callback = %p, user_data = %p ).",
+         callback, user_data );
+
+  event_handlers.echo_reply_callback = callback;
+  event_handlers.echo_reply_user_data = user_data;
 
   return true;
 }
@@ -513,7 +539,7 @@ handle_error( const uint64_t datapath_id, buffer *data ) {
   remove_front_buffer( body, offsetof( struct ofp_error_msg, data ) );
 
   debug( "An error message is received from %#lx "
-         "( transaction_id = %#x, type = %u, code = %u, data length = %u ).",
+         "( transaction_id = %#x, type = %#x, code = %#x, data length = %zu ).",
          datapath_id, transaction_id, type, code, body->length );
 
   if ( event_handlers.error_callback == NULL ) {
@@ -534,6 +560,57 @@ handle_error( const uint64_t datapath_id, buffer *data ) {
 
   free_buffer( body );
 }
+
+
+static void
+handle_echo_reply( const uint64_t datapath_id, buffer *data ) {
+  uint16_t body_length;
+  uint32_t transaction_id;
+  buffer *body;
+  struct ofp_header *header;
+
+  if ( ( data == NULL ) || ( ( data != NULL ) && ( data->length == 0 ) ) ) {
+    critical( "An OpenFlow message must be filled before calling handle_echo_reply()." );
+    assert( 0 );
+  }
+
+  header = ( struct ofp_header * ) data->data;
+
+  transaction_id = ntohl( header->xid );
+
+  body_length = ( uint16_t ) ( ntohs( header->length )
+                               - sizeof( struct ofp_header ) );
+
+  debug( "A echo reply message is received from %#" PRIx64
+         " ( transaction_id = %#x, body length = %u ).",
+         datapath_id, transaction_id, body_length );
+
+  if ( event_handlers.echo_reply_callback == NULL ) {
+    debug( "Callback function for echo reply events is not set." );
+    return;
+  }
+
+  if ( body_length > 0 ) {
+    body = duplicate_buffer( data );
+    remove_front_buffer( body, sizeof( struct ofp_header ) );
+  }
+  else {
+    body = NULL;
+  }
+
+  debug( "Calling echo reply handler ( callback = %p, user_data = %p ).",
+         event_handlers.echo_reply_callback, event_handlers.echo_reply_user_data );
+
+  event_handlers.echo_reply_callback( datapath_id,
+                                      transaction_id,
+                                      body,
+                                      event_handlers.echo_reply_user_data );
+
+  if ( body != NULL ) {
+    free_buffer( body );
+  }
+}
+
 
 
 static void
@@ -631,7 +708,7 @@ handle_features_reply( const uint64_t datapath_id, buffer *data ) {
       ntoh_phy_port( p, phy_port );
       append_to_tail( &phy_ports_head, ( void * ) p );
       phy_port_to_string( p, description, sizeof( description ) );
-      debug( "[%u] %s", phy_port, description );
+      debug( "[%p] %s", phy_port, description );
       phy_port++;
     }
   }
@@ -734,7 +811,7 @@ handle_packet_in( const uint64_t datapath_id, buffer *data ) {
 
   debug(
     "A packet_in message is received from %#" PRIx64
-    " (transaction_id = %#x, buffer_id = %#x, total_len = %u, in_port = %u, reason = %#x, body length = %u).",
+    " ( transaction_id = %#x, buffer_id = %#x, total_len = %u, in_port = %u, reason = %#x, body length = %u ).",
     datapath_id,
     transaction_id,
     buffer_id,
@@ -766,7 +843,7 @@ handle_packet_in( const uint64_t datapath_id, buffer *data ) {
   }
 
   assert( event_handlers.packet_in_callback != NULL );
-  debug( "Calling packet_in handler (callback = %p, user_data = %p).",
+  debug( "Calling packet_in handler ( callback = %p, user_data = %p ).",
          event_handlers.packet_in_callback,
          event_handlers.packet_in_user_data
   );
@@ -849,7 +926,7 @@ handle_flow_removed( const uint64_t datapath_id, buffer *data ) {
   }
 
   debug(
-    "Calling flow removed handler (callback = %p, user_data = %p).",
+    "Calling flow removed handler ( callback = %p, user_data = %p ).",
     event_handlers.flow_removed_callback,
     event_handlers.flow_removed_user_data
   );
@@ -1085,7 +1162,7 @@ handle_stats_reply( const uint64_t datapath_id, buffer *data ) {
       if ( body != NULL ) {
         free_buffer( body );
       }
-      critical( "Unhandled stats type ( type = %u ).", type );
+      critical( "Unhandled stats type ( type = %#x ).", type );
       assert( 0 );
       break;
     }
@@ -1114,7 +1191,7 @@ static void
 handle_barrier_reply( const uint64_t datapath_id, buffer *data ) {
   uint32_t transaction_id;
   struct ofp_header *header;
-  
+
   if ( ( data == NULL ) || ( ( data != NULL ) && ( data->length == 0 ) ) ) {
     critical( "An OpenFlow message must be filled before calling handle_barrier_reply()." );
     assert( 0 );
@@ -1252,6 +1329,9 @@ update_switch_event_stats( uint16_t type, int send_receive, bool result ) {
   case MESSENGER_OPENFLOW_DISCONNECTED:
     snprintf( key, STAT_KEY_LENGTH, "%s%s%s%s", prefix, "switch_disconnected", direction, suffix );
     break;
+  case MESSENGER_OPENFLOW_FAILD_TO_CONNECT:
+    snprintf( key, STAT_KEY_LENGTH, "%s%s%s%s", prefix, "switch_failed_to_connect", direction, suffix );
+    break;
   default:
     snprintf( key, STAT_KEY_LENGTH, "%s%s%s%s", prefix, "undefined_switch_event", direction, suffix );
     break;
@@ -1286,39 +1366,43 @@ handle_switch_ready( uint64_t datapath_id ) {
 
 
 static void
-handle_switch_events( uint16_t type, void *data, size_t length ) {
-  uint64_t datapath_id;
-  openflow_service_header_t *message;
+handle_messenger_openflow_disconnected( uint64_t datapath_id ) {
+  if ( event_handlers.switch_disconnected_callback != NULL ) {
+    debug( "Calling switch disconnected handler ( callback = %p, user_data = %p ).",
+           event_handlers.switch_disconnected_callback, event_handlers.switch_disconnected_user_data );
+    event_handlers.switch_disconnected_callback( datapath_id, event_handlers.switch_disconnected_user_data );
+  }
+  else {
+    debug( "Callback function for switch disconnected events is not set." );
+  }
+  delete_openflow_messages( datapath_id );
+}
 
+
+static void
+handle_switch_events( uint16_t type, void *data, size_t length ) {
   assert( data != NULL );
   assert( length == sizeof( openflow_service_header_t ) );
 
-  debug( "A switch event is received from remote ( type = %u ).", type );
+  debug( "Received a switch event ( type = %#x ) from remote.", type );
 
-  message = ( openflow_service_header_t * ) data;
-
-  datapath_id = ntohll( message->datapath_id );
+  openflow_service_header_t *message = data;
+  uint64_t datapath_id = ntohll( message->datapath_id );
 
   switch ( type ) {
-  case MESSENGER_OPENFLOW_CONNECTED:
-    break;
-  case MESSENGER_OPENFLOW_READY:
-    handle_switch_ready( datapath_id );
-    break;
-  case MESSENGER_OPENFLOW_DISCONNECTED:
-    if ( event_handlers.switch_disconnected_callback != NULL ) {
-      debug( "Calling switch disconnected handler ( callback = %p, user_data = %p ).",
-             event_handlers.switch_disconnected_callback, event_handlers.switch_disconnected_user_data );
-      event_handlers.switch_disconnected_callback( datapath_id,
-                                                   event_handlers.switch_disconnected_user_data );
-    }
-    else {
-      debug( "Callback function for switch disconnected events is not set." );
-    }
-    break;
-  default:
-    error( "Unhandled switch event ( type = %u ).", type );
-    break;
+    case MESSENGER_OPENFLOW_CONNECTED:
+    case MESSENGER_OPENFLOW_FAILD_TO_CONNECT:
+      // Do nothing.
+      break;
+    case MESSENGER_OPENFLOW_READY:
+      handle_switch_ready( datapath_id );
+      break;
+    case MESSENGER_OPENFLOW_DISCONNECTED:
+      handle_messenger_openflow_disconnected( datapath_id );
+      break;
+    default:
+      error( "Unhandled switch event ( type = %#x ).", type );
+      break;
   }
 
   update_switch_event_stats( type, OPENFLOW_MESSAGE_RECEIVE, true );
@@ -1459,7 +1543,7 @@ handle_openflow_message( void *data, size_t length ) {
   ret = validate_openflow_message( buffer );
 
   if ( ret < 0 ) {
-    error( "Failed to validate an OpenFlow message ( code = %d, length = %u ).", ret, length );
+    error( "Failed to validate an OpenFlow message ( code = %d, length = %zu ).", ret, length );
     free_buffer( buffer );
 
     return;
@@ -1470,6 +1554,9 @@ handle_openflow_message( void *data, size_t length ) {
   switch ( header->type ) {
   case OFPT_ERROR:
     handle_error( datapath_id, buffer );
+    break;
+  case OFPT_ECHO_REPLY:
+    handle_echo_reply( datapath_id, buffer );
     break;
   case OFPT_VENDOR:
     handle_vendor( datapath_id, buffer );
@@ -1499,7 +1586,7 @@ handle_openflow_message( void *data, size_t length ) {
     handle_queue_get_config_reply( datapath_id, buffer );
     break;
   default:
-    error( "Unhandled OpenFlow message ( type = %u ).", header->type );
+    error( "Unhandled OpenFlow message ( type = %#x ).", header->type );
     break;
   }
 
@@ -1514,17 +1601,18 @@ handle_message( uint16_t type, void *data, size_t length ) {
   assert( data != NULL );
   assert( length >= sizeof( openflow_service_header_t ) );
 
-  debug( "A message is received from remote ( type = %u ).", type );
+  debug( "A message is received from remote ( type = %#x ).", type );
 
   switch ( type ) {
   case MESSENGER_OPENFLOW_MESSAGE:
     return handle_openflow_message( data, length );
   case MESSENGER_OPENFLOW_CONNECTED:
+  case MESSENGER_OPENFLOW_FAILD_TO_CONNECT:
   case MESSENGER_OPENFLOW_READY:
   case MESSENGER_OPENFLOW_DISCONNECTED:
     return handle_switch_events( type, data, length );
   default:
-    error( "Unhandled message ( type = %u ).", type );
+    error( "Unhandled message ( type = %#x ).", type );
     update_switch_event_stats( type, OPENFLOW_MESSAGE_RECEIVE, true );
     break;
   }
@@ -1562,7 +1650,7 @@ handle_list_switches_reply( uint16_t message_type, void *data, size_t length, vo
   uint64_t *dpid = ( uint64_t *) data;
   size_t num_switch = length / sizeof( uint64_t );
 
-  debug( "A list switches reply message is received ( number of switches = %u ).",
+  debug( "A list switches reply message is received ( number of switches = %zu ).",
          num_switch );
 
   if ( event_handlers.list_switches_reply_callback == NULL ) {
@@ -1662,6 +1750,18 @@ send_list_switches_request( void *user_data ) {
 
   return send_request_message( "switch_manager", service_name, message_type,
                                data, data_length, user_data );
+}
+
+
+bool
+delete_openflow_messages( uint64_t datapath_id ) {
+  debug( "Deleting OpenFlow messages in a send queue ( datapath_id = %#" PRIx64 " ).", datapath_id );
+
+  char remote_service_name[ MESSENGER_SERVICE_NAME_LENGTH ];
+  memset( remote_service_name, '\0', sizeof( remote_service_name ) );
+  snprintf( remote_service_name, sizeof( remote_service_name ),
+            "switch.%#" PRIx64, datapath_id );
+  return clear_send_queue( remote_service_name );
 }
 
 

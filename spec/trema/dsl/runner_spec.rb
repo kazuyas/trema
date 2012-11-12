@@ -1,6 +1,4 @@
 #
-# Author: Yasuhito Takamiya <yasuhito@gmail.com>
-#
 # Copyright (C) 2008-2012 NEC Corporation
 #
 # This program is free software; you can redistribute it and/or modify
@@ -35,26 +33,6 @@ module Trema
 
 
       context "when running" do
-        it "should run tremashark" do
-          tremashark = mock
-          tremashark.should_receive( :run ).once
-
-          context = mock(
-            "context",
-            :tremashark => tremashark,
-            :switch_manager => nil,
-            :packetin_filter => nil,
-            :links => {},
-            :hosts => {},
-            :switches => {},
-            :apps => {},
-            :port => 6633
-          )
-
-          Runner.new( context ).run
-        end
-
-
         it "should run switch_manager" do
           @switch_manager.should_receive( :run! ).once
 
@@ -67,7 +45,8 @@ module Trema
             :links => {},
             :hosts => {},
             :switches => {},
-            :apps => {}
+            :apps => {},
+            :netnss => {}
           )
 
           Runner.new( context ).run
@@ -87,6 +66,7 @@ module Trema
             :hosts => {},
             :switches => {},
             :apps => {},
+            :netnss => {},
             :port => 6633
           )
 
@@ -116,6 +96,7 @@ module Trema
             :hosts => {},
             :switches => {},
             :apps => {},
+            :netnss => {},
             :port => 6633
           )
 
@@ -158,6 +139,7 @@ module Trema
             :hosts => { "host0" => host0, "host1" => host1, "host2" => host2 },
             :switches => {},
             :apps => {},
+            :netnss => {},
             :port => 6633
           )
 
@@ -184,6 +166,7 @@ module Trema
             :hosts => {},
             :switches => { "switch0" => switch0, "switch1" => switch1, "switch 2" => switch2 },
             :apps => {},
+            :netnss => {},
             :port => 6633
           )
 
@@ -214,6 +197,7 @@ module Trema
             :links => {},
             :hosts => {},
             :switches => {},
+            :netnss => {},
             :apps => apps
           )
 
@@ -244,6 +228,7 @@ module Trema
             :links => {},
             :hosts => {},
             :switches => {},
+            :netnss => {},
             :apps => apps
           )
 

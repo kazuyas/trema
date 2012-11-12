@@ -21,8 +21,8 @@
 require "trema/app"
 require "trema/host"
 require "trema/link"
+require "trema/openflow-switch"
 require "trema/packetin-filter"
-require "trema/switch"
 require "trema/switch-manager"
 
 
@@ -41,16 +41,6 @@ module Trema
       # @return [Number]
       #
       attr_accessor :port
-
-      #
-      # use tremashark?
-      #
-      # @example
-      #   config.tremashark = true
-      #
-      # @return [Boolean]
-      #
-      attr_accessor :tremashark
 
       #
       # the hash of {App}
@@ -90,11 +80,14 @@ module Trema
       #
       # @example
       #   p config.switches
-      #   #=> {"switch #0"=>#<Trema::Switch:0xb73c9328>, ...}
+      #   #=> {"switch #0"=>#<Trema::OpenflowSwitch:0xb73c9328>, ...}
       #
       # @return [Hash]
       #
       attr_reader :switches
+
+
+      attr_reader :netnss
 
 
       #
@@ -107,13 +100,13 @@ module Trema
       #
       def initialize
         @port = 6633
-        @tremashark = false
         @apps = Trema::App.clear
         @hosts = Trema::Host.clear
         @links = Trema::Link.clear
         @packetin_filter = Trema::PacketinFilter.clear
         @switch_manager = Trema::SwitchManager.clear
-        @switches = Trema::Switch.clear
+        @switches = Trema::OpenflowSwitch.clear
+        @netnss = Trema::Netns.clear
       end
 
 

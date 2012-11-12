@@ -20,6 +20,9 @@
 #
 
 
+require "trema/tremashark"
+
+
 module Trema
   module DSL
     class Runner
@@ -85,11 +88,12 @@ module Trema
         maybe_create_links
         maybe_run_hosts
         maybe_run_switches
+        maybe_run_netnss
       end
 
 
       def maybe_run_tremashark
-        @context.tremashark.run if @context.tremashark
+        Trema::Tremashark.new.run if $use_tremashark
       end
 
 
@@ -127,6 +131,13 @@ module Trema
 
         @context.hosts.each do | name, host |
           host.add_arp_entry @context.hosts.values - [ host ]
+        end
+      end
+
+
+      def maybe_run_netnss
+        @context.netnss.each do | name, netns |
+          netns.run!
         end
       end
 

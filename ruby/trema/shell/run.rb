@@ -26,18 +26,20 @@ require "trema/dsl"
 module Trema
   module Shell
     def run controller
-      sanity_check
+      assert_trema_is_built
 
       if controller
-        if /ELF/=~ `file #{ controller }`
-          stanza = DSL::Run.new
-          stanza.path controller
-          App.new stanza
-        else
+        if /\.rb\Z/=~ controller.split.first
           require "trema"
+          include Trema
           ARGV.replace controller.split
           $LOAD_PATH << File.dirname( controller )
-          Trema.module_eval IO.read( controller )
+          load controller
+        else
+          # Assume that the controller is written in C
+          stanza = Trema::DSL::Run.new
+          stanza.path controller
+          Trema::App.new( stanza )
         end
       end
 

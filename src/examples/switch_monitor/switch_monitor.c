@@ -56,7 +56,7 @@ delete_switches( list_element *switches ) {
 }
 
 
-static void 
+static void
 insert_datapath_id( list_element **switches, uint64_t datapath_id ) {
   list_element *element = NULL;
   for ( element = *switches; element != NULL; element = element->next ) {
@@ -77,7 +77,7 @@ insert_datapath_id( list_element **switches, uint64_t datapath_id ) {
     insert_in_front( switches, new );
   }
   else {
-    insert_before( switches, element, new );
+    insert_before( switches, element->data, new );
   }
 }
 
@@ -121,7 +121,7 @@ show_switches( void *user_data ) {
   char *list = xmalloc( 20 * num_switch + 1 ); // 20 = dpid string (18 chars) + ", "
   list[ 0 ] = '\0';
   join( list, *switches );
-  info( "All switches  = %s", list );
+  info( "All switches = %s", list );
   xfree( list );
 }
 

@@ -1,6 +1,6 @@
 /*
  * Unit tests for utility functions.
- * 
+ *
  * Author: Yasuhito Takamiya <yasuhito@gmail.com>
  *
  * Copyright (C) 2008-2012 NEC Corporation
@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <arpa/inet.h>
 #include "cmockery_trema.h"
 #include "log.h"
 #include "ipv4.h"
@@ -199,9 +200,65 @@ test_string_to_datapath_id() {
 
 
 static void
+test_wildcards_to_string_with_exact_match() {
+  char wildcards_str[ 128 ];
+  char expected_wildcards_str[] = "none";
+  uint32_t wildcards = 0;
+  assert_true( wildcards_to_string( wildcards, wildcards_str, sizeof( wildcards_str ) ) );
+  assert_string_equal( wildcards_str, expected_wildcards_str );
+
+  wildcards = UINT32_MAX & ~( ( uint32_t ) OFPFW_ALL );
+  assert_true( wildcards_to_string( wildcards, wildcards_str, sizeof( wildcards_str ) ) );
+  assert_string_equal( wildcards_str, expected_wildcards_str );
+}
+
+
+static void
+test_wildcards_to_string_with_all_wildcards() {
+  char wildcards_str[ 128 ];
+  char expected_wildcards_str[] = "all";
+  uint32_t wildcards = OFPFW_ALL;
+  assert_true( wildcards_to_string( wildcards, wildcards_str, sizeof( wildcards_str ) ) );
+  assert_string_equal( wildcards_str, expected_wildcards_str );
+
+  wildcards = UINT32_MAX;
+  assert_true( wildcards_to_string( wildcards, wildcards_str, sizeof( wildcards_str ) ) );
+  assert_string_equal( wildcards_str, expected_wildcards_str );
+}
+
+
+static void
+test_wildcards_to_string_with_all_wildcards_except_in_port() {
+  char wildcards_str[ 128 ];
+  char expected_wildcards_str[] = "dl_src|dl_dst|dl_type|dl_vlan|dl_vlan_pcp|nw_proto|nw_tos|nw_src(63)|nw_dst(63)|tp_src|tp_dst";
+  uint32_t wildcards = OFPFW_ALL & ~OFPFW_IN_PORT;
+  assert_true( wildcards_to_string( wildcards, wildcards_str, sizeof( wildcards_str ) ) );
+  assert_string_equal( wildcards_str, expected_wildcards_str );
+}
+
+
+static void
+test_wildcards_to_string_with_all_wildcards_except_dl_addrs() {
+  char wildcards_str[ 128 ];
+  char expected_wildcards_str[] = "in_port|dl_type|dl_vlan|dl_vlan_pcp|nw_proto|nw_tos|nw_src(63)|nw_dst(63)|tp_src|tp_dst";
+  uint32_t wildcards = OFPFW_ALL & ~OFPFW_DL_SRC & ~OFPFW_DL_DST;
+  assert_true( wildcards_to_string( wildcards, wildcards_str, sizeof( wildcards_str ) ) );
+  assert_string_equal( wildcards_str, expected_wildcards_str );
+}
+
+
+static void
+test_wildcards_to_string_fails_with_insufficient_buffer() {
+  char wildcards_str[ 1 ];
+  uint32_t wildcards = 0;
+  assert_false( wildcards_to_string( wildcards, wildcards_str, sizeof( wildcards_str ) ) );
+}
+
+
+static void
 test_match_to_string() {
   char match_str[ 256 ];
-  char expected_match_str[] = "wildcards = 0, in_port = 1, dl_src = 01:02:03:04:05:07, dl_dst = 08:09:0a:0b:0c:0d, dl_vlan = 1, dl_vlan_pcp = 1, dl_type = 0x800, nw_tos = 1, nw_proto = 6, nw_src = 10.9.8.7/32, nw_dst = 6.5.4.3/32, tp_src = 1024, tp_dst = 2048";
+  char expected_match_str[] = "wildcards = 0(none), in_port = 1, dl_src = 01:02:03:04:05:07, dl_dst = 08:09:0a:0b:0c:0d, dl_vlan = 0x1, dl_vlan_pcp = 0x1, dl_type = 0x800, nw_tos = 1, nw_proto = 6, nw_src = 10.9.8.7/32, nw_dst = 6.5.4.3/32, tp_src = 1024, tp_dst = 2048";
   struct ofp_match match = { 0, 1,
                              { 0x01, 0x02, 0x03, 0x04, 0x05, 0x07 },
                              { 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d },
@@ -225,7 +282,7 @@ test_match_to_string_fails_with_insufficient_buffer() {
 static void
 test_phy_port_to_string() {
   char phy_port_str[ 256 ];
-  char expected_phy_port_str[] = "port_no = 1, hw_addr =  01:02:03:04:05:06, name = GbE 0/1, config = 0x1, state = 0x1, curr = 0x4a0, advertised = 0x6bf, supported = 0x6bf, peer = 0x6bf";
+  char expected_phy_port_str[] = "port_no = 1, hw_addr = 01:02:03:04:05:06, name = GbE 0/1, config = 0x1, state = 0x1, curr = 0x4a0, advertised = 0x6bf, supported = 0x6bf, peer = 0x6bf";
   uint8_t hw_addr[ OFP_ETH_ALEN ] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 };
   uint32_t port_features = ( OFPPF_10MB_HD | OFPPF_10MB_FD | OFPPF_100MB_HD |
                              OFPPF_100MB_FD | OFPPF_1GB_HD | OFPPF_1GB_FD |
@@ -588,6 +645,12 @@ main() {
     unit_test( test_mac_to_uint64 ),
 
     unit_test( test_string_to_datapath_id ),
+
+    unit_test( test_wildcards_to_string_with_exact_match ),
+    unit_test( test_wildcards_to_string_with_all_wildcards ),
+    unit_test( test_wildcards_to_string_with_all_wildcards_except_in_port ),
+    unit_test( test_wildcards_to_string_with_all_wildcards_except_dl_addrs ),
+    unit_test( test_wildcards_to_string_fails_with_insufficient_buffer ),
 
     unit_test( test_match_to_string ),
     unit_test( test_match_to_string_fails_with_insufficient_buffer ),

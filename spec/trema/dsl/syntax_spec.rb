@@ -30,15 +30,6 @@ describe Trema::DSL::Syntax do
   end
 
 
-  it "should recognize 'use_tremashark' directive" do
-    @context.should_receive( :tremashark= ).with( an_instance_of( Tremashark ) ).once
-
-    @syntax.instance_eval do
-      use_tremashark
-    end
-  end
-
-
   it "should recognize 'port' directive" do
     @context.should_receive( :port= ).with( 1234 ).once
 
@@ -59,7 +50,7 @@ describe Trema::DSL::Syntax do
 
 
   it "should recognize 'switch' directive" do
-    Trema::Switch.should_receive( :add ).with( an_instance_of( OpenflowSwitch ) ).once
+    Trema::OpenflowSwitch.should_receive( :add ).with( an_instance_of( HardwareSwitch ) ).once
 
     @syntax.instance_eval do
       switch { dpid "0xabc" }
@@ -68,7 +59,7 @@ describe Trema::DSL::Syntax do
 
 
   it "should recognize 'vswitch' directive" do
-    Trema::Switch.should_receive( :add ).with( an_instance_of( OpenVswitch ) ).once
+    Trema::OpenflowSwitch.should_receive( :add ).with( an_instance_of( OpenVswitch ) ).once
 
     @syntax.instance_eval do
       vswitch { dpid "0xabc" }

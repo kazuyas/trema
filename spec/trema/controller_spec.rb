@@ -1,6 +1,4 @@
 #
-# Author: Yasuhito Takamiya <yasuhito@gmail.com>
-#
 # Copyright (C) 2008-2012 NEC Corporation
 #
 # This program is free software; you can redistribute it and/or modify
@@ -36,28 +34,6 @@ module Trema
       it { should include "OFPP_CONTROLLER" }
       it { should include "OFPP_LOCAL" }
       it { should include "OFPP_NONE" }
-
-      it { should include "OFPC_FLOW_STATS" }
-      it { should include "OFPC_TABLE_STATS" }
-      it { should include "OFPC_PORT_STATS" }
-      it { should include "OFPC_STP" }
-      it { should include "OFPC_RESERVED" }
-      it { should include "OFPC_IP_REASM" }
-      it { should include "OFPC_QUEUE_STATS" }
-      it { should include "OFPC_ARP_MATCH_IP" }
-
-      it { should include "OFPAT_OUTPUT" }
-      it { should include "OFPAT_SET_VLAN_VID" }
-      it { should include "OFPAT_SET_VLAN_PCP" }
-      it { should include "OFPAT_STRIP_VLAN" }
-      it { should include "OFPAT_SET_DL_SRC" }
-      it { should include "OFPAT_SET_DL_DST" }
-      it { should include "OFPAT_SET_NW_SRC" }
-      it { should include "OFPAT_SET_NW_DST" }
-      it { should include "OFPAT_SET_NW_TOS" }
-      it { should include "OFPAT_SET_TP_DST" }
-      it { should include "OFPAT_ENQUEUE" }
-      it { should include "OFPAT_VENDOR" }
     end
 
 
@@ -81,6 +57,7 @@ module Trema
           vswitch { datapath_id 0xabc }
         }.run( FlowModAddController ) {
           controller( "FlowModAddController" ).send_flow_mod_add( 0xabc )
+	  sleep 2 # FIXME: wait to send_flow_mod_add
           vswitch( "0xabc" ).should have( 1 ).flows
         }
       end

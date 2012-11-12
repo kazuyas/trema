@@ -46,6 +46,7 @@ begin
 
   RSpec::Core::RakeTask.new( "spec:travis" ) do | spec |
     spec.pattern = FileList[ "spec/**/*_spec.rb" ]
+    # FIXME: use --tag ~sudo
     spec.rspec_opts = "--tag nosudo -fs -c"
   end
 
@@ -60,7 +61,9 @@ end
 
 begin
   require "cucumber/rake/task"
-  Cucumber::Rake::Task.new( :features )
+  Cucumber::Rake::Task.new( :features ) do | t |
+    t.cucumber_opts = "features --tags ~@wip"
+  end
 rescue LoadError
   $stderr.puts $!.to_s
 end
@@ -129,9 +132,9 @@ begin
   require "flay_task"
 
   FlayTask.new do | t |
-    # add directories such as app, bin, spec and test if need be.
     t.dirs = %w( ruby )
     t.threshold = 0
+    t.verbose = true
   end
 rescue LoadError
   $stderr.puts $!.to_s
@@ -149,8 +152,55 @@ begin
 
   YARD::Rake::YardocTask.new do | t |
     t.files = [ "ruby/trema/**/*.c", "ruby/trema/**/*.rb" ]
-    t.options = []
+    t.options = [ "--no-private" ]
     t.options << "--debug" << "--verbose" if $trace
+  end
+
+  yardoc_i18n = "./vendor/yard.i18n/bin/yardoc"
+
+  namespace :yard do
+    desc "Generate YARD Documentation in Japanese"
+    task :ja => "yard:po" do
+      sh "#{ yardoc_i18n } --language ja ruby/trema"
+    end
+  end
+
+  locale_base_dir = "locale"
+  locale_dir = "#{ locale_base_dir }/ja"
+  pot = "#{ locale_base_dir }/yard.pot"
+  po = "#{ locale_dir }/yard.po"
+
+  namespace :yard do
+    desc "generate .pot file"
+    task :pot => pot
+
+    desc "Generate .po file"
+    task :po => po
+
+    file pot => FileList[ "ruby/trema/**/*.rb", "ruby/trema/**/*.c" ] do
+      Rake::Task[ "yard:pot:generate" ].invoke
+    end
+
+    namespace :pot do
+      task :generate do
+        sh( yardoc_i18n, "--no-yardopts", "--output", locale_base_dir, "--format", "pot", "ruby/trema" )
+      end
+    end
+
+    directory locale_dir
+    file po => [ locale_dir, pot ] do
+      Rake::Task[ "yard:po:generate" ].invoke
+    end
+
+    namespace :po do
+      task :generate do
+        if File.exist?( po )
+          sh( "msgmerge", "--update", "--sort-by-file", po, pot )
+        else
+          sh( "msginit", "--input", pot, "--output", po, "--locale", "ja.UTF-8" )
+        end
+      end
+    end
   end
 rescue LoadError
   $stderr.puts $!.to_s

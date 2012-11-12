@@ -22,18 +22,21 @@
 
 require "trema/app"
 require "trema/dsl/link"
+require "trema/dsl/netns"
+require "trema/dsl/rswitch"
 require "trema/dsl/run"
 require "trema/dsl/switch"
 require "trema/dsl/vhost"
 require "trema/dsl/vswitch"
+require "trema/hardware-switch"
 require "trema/host"
 require "trema/link"
 require "trema/monkey-patch/module"
+require "trema/netns"
 require "trema/open-vswitch"
-require "trema/openflow-switch"
 require "trema/packetin-filter"
+require "trema/ruby-switch"
 require "trema/switch-manager"
-require "trema/tremashark"
 
 
 module Trema
@@ -41,11 +44,6 @@ module Trema
     class Syntax
       def initialize config
         @config = config
-      end
-
-
-      def use_tremashark
-        @config.tremashark = Trema::Tremashark.new
       end
 
 
@@ -63,7 +61,7 @@ module Trema
       def switch name = nil, &block
         stanza = Trema::DSL::Switch.new( name )
         stanza.instance_eval( &block )
-        Trema::OpenflowSwitch.new( stanza )
+        Trema::HardwareSwitch.new( stanza )
       end
 
 
@@ -74,10 +72,24 @@ module Trema
       end
 
 
+      def rswitch name = nil, &block
+        stanza = Trema::DSL::Rswitch.new( name )
+        stanza.instance_eval( &block )
+        Trema::RubySwitch.new( stanza )
+      end
+
+
       def vhost name = nil, &block
         stanza = Trema::DSL::Vhost.new( name )
         stanza.instance_eval( &block ) if block
         Trema::Host.new( stanza )
+      end
+
+
+      def netns name, &block
+        stanza = Trema::DSL::Netns.new( name )
+        stanza.instance_eval( &block ) if block
+        Trema::Netns.new( stanza )
       end
 
 
